@@ -1,73 +1,11 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import math
 from tifffile import imwrite
-import torch
-from IPython.display import display
 from pycromanager import Core
 import datetime
 import csv
-import cv2
-from maskterial import MaskTerial, load_models
-from maskterial.structures import Flake
-
-#------ carregando o maskterial
-print("Carregando MaskTerial")
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-IMAGE_DIR = "/content/maskterial_repo/demo/images/teste/"
-
-SEG_MODEL = "M2F"
-SEG_MODEL_ROOT = "/content/models/segmentation_models/M2F/GrapheneH"
-
-CLS_MODEL = "AMM"
-CLS_MODEL_ROOT = "/content/models/classification_models/AMM/GrapheneH"
-
-PP_MODEL = None
-PP_MODEL_ROOT = None
-
-SCORE_THRESHOLD = 0.1
-MIN_CLASS_OCCUPANCY = 0.5
-SIZE_THRESHOLD = 200
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-IMAGE_DIR = "/content/maskterial_repo/demo/images/teste/"
-
-SEG_MODEL = "M2F"
-SEG_MODEL_ROOT = "/content/models/segmentation_models/M2F/GrapheneH"
-
-CLS_MODEL = "AMM"
-CLS_MODEL_ROOT = "/content/models/classification_models/AMM/GrapheneH"
-
-PP_MODEL = None
-PP_MODEL_ROOT = None
-
-SCORE_THRESHOLD = 0.1
-MIN_CLASS_OCCUPANCY = 0.5
-SIZE_THRESHOLD = 200
-
-segmentation_model, classification_model, postprocessing_model = load_models(
-    seg_model_type=SEG_MODEL,
-    seg_model_root=SEG_MODEL_ROOT,
-    cls_model_type=CLS_MODEL,
-    cls_model_root=CLS_MODEL_ROOT,
-    pp_model_type=PP_MODEL,
-    pp_model_root=PP_MODEL_ROOT,
-    device=DEVICE,
-)
-
-predictor = MaskTerial(
-    segmentation_model=segmentation_model,
-    classification_model=classification_model,
-    postprocessing_model=postprocessing_model,
-    score_threshold=SCORE_THRESHOLD,
-    min_class_occupancy=MIN_CLASS_OCCUPANCY,
-    size_threshold=SIZE_THRESHOLD,
-    device=DEVICE,
-)
-
+from modelo import predictor
 
 # --- CONFIGURAÇÕES DE DIRETÓRIO ---
 timestamp = datetime.datetime.now().strftime('%d-%m-%Y_%H-%M-%S')
@@ -82,7 +20,6 @@ with open(arquivo_log, mode='w', newline='') as file:
 
 # --- CÁLCULOS ---
 def calibrar_plano_foco(pontos):
-    """Calcula os coeficientes do plano Z = aX + bY + c usando Mínimos Quadrados."""
     A = np.c_[[p[0] for p in pontos], [p[1] for p in pontos], np.ones(len(pontos))]
     Z = np.array([p[2] for p in pontos])
     coeficientes, _, _, _ = np.linalg.lstsq(A, Z, rcond=None)
@@ -90,7 +27,6 @@ def calibrar_plano_foco(pontos):
 
 
 def calcular_z(x, y, coeficientes):
-    """Retorna o valor de Z ideal para uma coordenada (X, Y) baseada no plano."""
     return (coeficientes[0] * x) + (coeficientes[1] * y) + coeficientes[2]
 
 
@@ -128,10 +64,7 @@ while True:
     entrada = input(f"Quantos pontos serão utilizados para ajustar a varredura? (Mínimo {minimo_pontos}): ")
 
     try:
-        # Tenta converter o texto digitado em um número inteiro
         qtd_pontos_calibracao = int(entrada)
-
-        # Verifica se o número atende à restrição física
         if qtd_pontos_calibracao < minimo_pontos:
             print(
                 f"[Aviso] Você digitou {qtd_pontos_calibracao}. É necessário pelo menos {minimo_pontos} pontos para calibrar o estágio. Tente novamente.\n")
@@ -140,7 +73,6 @@ while True:
             break
 
     except ValueError:
-        # Captura o erro caso o usuário digite letras, símbolos ou deixe em branco
         print("[Erro] Entrada inválida! Por favor, digite apenas números inteiros (ex: 2, 3, 4).\n")
 
 pontos_coletados = []
@@ -194,11 +126,8 @@ for i, n in enumerate(malha_x):
         imagem_bgra = pixels_brutos.reshape((altura, largura, 4))
         imagem_colorida = imagem_bgra[:, :, :3][:, :, ::-1]
 
-        image = cv2.imread(image_path) #conferir amanhã com o thiago
-        flakes = predictor.predict(image) #conferir amanhã com o thiago
-
-        resultados = predictor.predict(imagem_colorida) #conferir amanhã com o thiago
-        quantidade_flakes = len(resultados["instances"]) #conferir amanhã com o thiago
+        resultados = predictor.predict(imagem_colorida)
+        quantidade_flakes = len(resultados)
         if quantidade_flakes > 0:
             nome_arquivo = f"flake_X{i}_Y{j}.tif"
             caminho_completo = os.path.join(diretorio_saida, nome_arquivo)
@@ -212,7 +141,7 @@ for i, n in enumerate(malha_x):
             print(f"SUCESSO: {quantidade_flakes} flake(s) em X={n:.1f}, Y={m:.1f}. Salvo como {nome_arquivo}")
 
         else:
-            print(f"[-] Vazio: Posição X={n:.1f}, Y={m:.1f} descartada.")
+            print(f"Nenhum flake detectado em X={i}, Y={i}.")
 
 # 7. Retorno à origem e finalização
 core.set_xy_position(xy_stage, x_inicial, y_inicial)
